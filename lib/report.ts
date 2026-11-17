@@ -75,7 +75,6 @@ export function economicsFor(row: BoardRow): FarmEconomics {
     net_usd_per_hour: Math.round(net * 100) / 100,
   };
 }
-
 /** A whole-dollar string with thousands separators, for the report's plain text. */
 export function usd(n: number): string {
   return '$' + Math.round(n).toLocaleString('en-US');
@@ -113,17 +112,17 @@ export function buildReport(
   lines.push('');
   lines.push('## The board');
   lines.push('');
-  lines.push('| # | Protocol | Category | TVL | 7d | Age | Implied value | Farm net $/hr |');
-  lines.push('|--:|---|---|--:|--:|--:|--:|--:|');
+  lines.push('| # | Protocol | Category | TVL | 7d | Age | Multiple | Base (TVL×mult) | Growth× | Maturity× | Implied value | Farm net $/hr |');
+  lines.push('|--:|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|');
   for (const row of rows.slice(0, topN)) {
     const e = economicsFor(row);
     const cat = row.category ?? 'Other';
     const growth = row.change_7d === null ? 'n/a' : `${row.change_7d >= 0 ? '+' : ''}${row.change_7d.toFixed(1)}%`;
     const age = row.age_days === null ? 'n/a' : `${Math.round(row.age_days)}d`;
-    lines.push(`| ${row.rank} | ${row.name} | ${cat} | ${usd(row.tvl_usd)} | ${growth} | ${age} | ${usd(row.implied_value_usd)} | ${e.net_usd_per_hour} |`);
+    lines.push(`| ${row.rank} | ${row.name} | ${cat} | ${usd(row.tvl_usd)} | ${growth} | ${age} | ${row.model.multiple.toFixed(3)}x | ${usd(row.base_value_usd)} | ${row.model.growth_multiplier} | ${row.model.maturity_multiplier} | ${usd(row.implied_value_usd)} | ${e.net_usd_per_hour} |`);
   }
   lines.push('');
-  lines.push(`Rows beyond the top ${topN} are in board.json and on the dashboard.`);
+  lines.push(`Rows beyond the top ${topN} are in board.json and on the dashboard. Every implied value is its TVL times the multiple times the growth and maturity multipliers shown, so a reader can re-check any row by hand.`);
   lines.push('');
   lines.push('## How to read a farm plan');
   lines.push('');

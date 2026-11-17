@@ -1,6 +1,10 @@
 // shoot.mjs — capture three screenshots of the token radar dashboard: the board, a protocol's
 // detail view, and a filtered view. Serves <repo>/out locally (the page itself needs no network)
 // and drives Chromium. The filtered view picks a category in the real control, as a reader does.
+//
+// The gate takes a screenshot whose long side is at most 1440 and short side at least 800, so every
+// frame is captured in a 1440-square window at one device pixel each. A detail-rich frame lands in
+// the 300-350 KiB band the dossier asks for; the tool prints each file's size so a run shows it.
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
@@ -29,12 +33,15 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 
 const browser = await chromium.launch({ executablePath: EXEC, args: ['--no-sandbox'] });
-const page = await browser.newPage({ viewport: { width: 1360, height: 900 }, deviceScaleFactor: 1 });
+// The gate takes a screenshot whose long side is at most 1440 and short side at least 800, and the
+// dossier wants each frame at 300 to 350 KiB. A 1060x1000 CSS window rendered at 1.3585 device pixels
+// each gives a 1440x1359 image: a full, readable board that lands in that byte band on this page.
+const page = await browser.newPage({ viewport: { width: 1060, height: 1000 }, deviceScaleFactor: 1.3585 });
 
 const URL_BASE = `http://127.0.0.1:${PORT}/dashboard/index.html`;
 
-async function fresh() {
-  await page.goto(URL_BASE, { waitUntil: 'load' });
+async function fresh(hash) {
+  await page.goto(URL_BASE + (hash || ''), { waitUntil: 'load' });
   await page.waitForTimeout(400);
 }
 
@@ -46,7 +53,7 @@ async function snap(file) {
 
 mkdirSync(join(repo, 'screenshots'), { recursive: true });
 
-// 1. The board, at the top, on the watchlist floor view.
+// 1. The board: the masthead, the worked example and the top of the ranked table.
 await fresh();
 await snap('screenshots/1-board.png');
 
@@ -55,9 +62,10 @@ await page.locator('tbody tr').first().click();
 await page.waitForTimeout(600);
 await snap('screenshots/2-detail.png');
 
-// 3. A filtered view: pick a category and a chain in the real controls, as a reader does.
+// 3. A filtered view: pick a chain and a minimum implied value in the real controls, as a reader does.
 await fresh();
-await page.selectOption('#category', 'Lending');
+await page.selectOption('#chain', 'Ethereum');
+await page.selectOption('#min', '10000000');
 await page.waitForTimeout(300);
 await snap('screenshots/3-filtered.png');
 

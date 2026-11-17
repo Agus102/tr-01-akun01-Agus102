@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const OUT = process.argv[2] || 'out';
-const SNAP = process.env.SNAPSHOT || join(import.meta.dirname, '..', '..', 'token-radar-01-kit', 'input', 'snapshot.json');
+const SNAP = process.env.SNAPSHOT || join(import.meta.dirname, '..', 'token-radar-01-kit', 'input', 'snapshot.json');
 const snap = JSON.parse(readFileSync(SNAP, 'utf8'));
 const slugs = new Set(snap.protocols.map((p) => p.slug));
 const watch = snap.watchlist;
