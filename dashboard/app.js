@@ -241,12 +241,12 @@
     return el('section', { class: 'lede' },
       el('div', { class: 'lede-copy' },
         el('h1', { text: 'Pre-token protocols, ranked by what a launch would be worth' }),
-        el('p', { text: 'The watchlist is the floor: every protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL and no token on record, minus the wrapped, staked and bridged products of tokens that already trade. The radar adds the ' + DATA.early_size + ' pre-token protocols below that floor, so the board finds the early ones too. Implied value is a model, not a promise: a protocol may never issue a token, and this snapshot records none yet.' })
+        el('p', { text: 'The watchlist is the floor: every protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL and no token on record, minus the wrapped, staked and bridged products of tokens that already trade. The radar adds the ' + DATA.early_size + ' pre-token protocols the list leaves out \u2014 below the floor and the ones it dropped \u2014 so the board finds the early ones too. Implied value is a model, not a promise: a protocol may never issue a token, and this snapshot records none yet.' })
       ),
       el('div', { class: 'facts' },
         fact('Watchlist covered', DATA.watchlist.covered ? DATA.watchlist.listed + ' / ' + DATA.watchlist.listed : DATA.watchlist.listed + ' listed'),
         fact('Protocols scanned', String(DATA.rows.length)),
-        fact('Early rows below the floor', String(DATA.early_size)),
+        fact('Early rows the list left out', String(DATA.early_size)),
         fact('Live tokens set aside', String(DATA.live_size))
       )
     );
@@ -439,7 +439,7 @@
         calibCard('Versus one fixed multiple', v.baselineTvlOnly.toFixed(3), 'the same test against a single global ' + v.baselineMultiple.toFixed(3) + 'x multiple, blind to TVL: ' + verdict),
         calibCard('Versus the size fit alone', v.fitOnlyAbsLogError.toFixed(3), 'the fit with no category correction: ' + catVerdict)
       ),
-      el('p', { class: 'sub' }, 'TVL and seven-day growth come from the snapshot. Age is how long DefiLlama has tracked the protocol, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. The early radar is every pre-token protocol below the watchlist floor, by TVL. The ' + DATA.watchlist.derived + ' protocols the rule derives from these ten fields and the ' + DATA.watchlist.listed + ' the snapshot names itself are reconciled below: the snapshot\u2019s list is the floor\u2019s authority and the board covers it whole.'),
+      el('p', { class: 'sub' }, 'TVL and seven-day growth come from the snapshot. Age is how long DefiLlama has tracked the protocol, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. The early radar is every pre-token protocol the watchlist leaves out \u2014 below the floor and the ones the list dropped \u2014 ranked by the same model. The ' + DATA.watchlist.derived + ' protocols the rule derives from these ten fields and the ' + DATA.watchlist.listed + ' the snapshot names itself are reconciled below: the snapshot\u2019s list is the floor\u2019s authority and the board covers it whole.'),
       watchAudit()
     );
   }

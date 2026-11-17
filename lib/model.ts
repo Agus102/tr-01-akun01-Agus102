@@ -94,8 +94,8 @@ export const MODEL: ModelConstants = {
 /** The model's version label: the dashboard names it and the rules quote it. */
 export const MODEL_VERSION = 'radar-3-category-fit';
 
-/** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
-export const EARLY_ROWS = 160;
+/** How many pre-token protocols the watchlist leaves out the early radar carries, by implied value. */
+export const EARLY_ROWS = 200;
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 40;
@@ -526,9 +526,19 @@ export function auditWatchlist(snapshot: Snapshot): WatchlistAudit {
   };
 }
 
-/** Whether a protocol is one the board may rank: pre-token, not an exchange, not a versioned pool. */
+/**
+ * Whether a protocol is one the board may rank: a pre-token protocol the brief treats as a launch
+ * candidate. It records no token, and it is not a wrapped, staked or bridged product of one that
+ * trades — the same product classes the watchlist rule excludes — and not an exchange's own product.
+ * The board ranks only subjects of the kind the radar exists to find.
+ */
 export function isRankable(p: SnapshotProtocol): boolean {
-  return isPreToken(p) && p.category !== 'CEX' && !VERSIONED.test(p.name);
+  if (!isPreToken(p)) return false;
+  if (p.category !== null && PARENT_CATEGORIES.has(p.category)) return false;
+  if (VERSIONED.test(p.name)) return false;
+  if (WRAPPED_WORD.test(p.name)) return false;
+  if (EXCHANGE_PREFIXES.some((e) => p.name.startsWith(e))) return false;
+  return true;
 }
 
 /** The snapshot's protocol by slug. */
@@ -545,10 +555,16 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     const p = index.get(slug);
     if (p !== undefined) chosen.set(slug, p);
   }
+  // The early radar: every pre-token protocol the watchlist leaves out, whether below the floor or a
+  // protocol at or above it the list dropped, scored by the same model, and the strongest EARLY_ROWS
+  // kept. The selection is by implied value, so the early rows are the ones the model rates, not
+  // merely the largest by TVL, and the floor stays what it is: a floor, never a ceiling.
   const early = snapshot.protocols
-    .filter((p) => !chosen.has(p.slug) && isRankable(p) && p.tvl_usd < snapshot.floor_usd)
-    .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0))
-    .slice(0, EARLY_ROWS);
+    .filter((p) => !chosen.has(p.slug) && isRankable(p))
+    .map((p) => ({ p, implied: impliedValue(p, snapshot.as_of, comps, model).implied }))
+    .sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0))
+    .slice(0, EARLY_ROWS)
+    .map((e) => e.p);
   for (const p of early) chosen.set(p.slug, p);
 
   const scored = [...chosen.values()].map((p) => {
