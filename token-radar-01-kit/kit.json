@@ -4,20 +4,20 @@
   "phase": "dev",
   "bundle_sha256": "ea1c9dccab78e6846655e81b921a79465c7267677ea2e0908624ddbc8a012d43",
   "dataset_sha256": null,
-  "harness_version": "harness@546df5aff56cc8af09867be4c31d26a3ce27c0b2eff46bf33475ba28d6aeaa8e node v22.23.4",
-  "scorer_version": "scorer@efd47cba5764685680854176b835ebf7f34a353193549e415357d7d923cda60a program@09a3c69e80790f73fe3f77b15788aeefd7975f9237e2051a9ef3603de3d55da2",
-  "pricing_rev": "472b48ba54ffaf5d3f3c9230050ef16360d2fb9280d6b299e549e2bd8e0b6393",
+  "harness_version": "harness@9666cba9ca42e56e2ede02e85b8396a609494a4d0ffa96e27d7eb2bc734ac6d6 node v26.13.1",
+  "scorer_version": "scorer@d049e1c7046103e0592806f87f691a64409b4f859738e61ff928f0ecc881f7fd program@09a3c69e80790f73fe3f77b15788aeefd7975f9237e2051a9ef3603de3d55da2",
+  "pricing_rev": "c6fcfac2cd8c1a316582690b02362df43ca26403f81019dbc528d75df1fb04e0",
   "protocol": "agent-fun/program/v1",
   "files": [
     {
       "path": "RULES.txt",
-      "sha256": "c611db8c5f34874ea32caa7a6dddcca968bd60ce6bb6e8778224bf395880cc9e",
-      "size": 86503
+      "sha256": "3ddc4acf8018fb4d06d5ddc2a71d0176b48f55e25b7eb89e57f53a9549638b35",
+      "size": 88554
     },
     {
       "path": "cli/makefun.mjs",
-      "sha256": "63286fe536d65903870fcc5079c6639a0efdfc71e97cfc0ddef238bf4ff21f1f",
-      "size": 13412229
+      "sha256": "990fe1f6c429b1e2ed14c98372b067914ab058709994e8fe51d36c0ab5edbb0f",
+      "size": 14455538
     },
     {
       "path": "cli/site.json",
@@ -31,22 +31,22 @@
     },
     {
       "path": "harness/CODE.sha256",
-      "sha256": "610f536d02461bef09fde3616f6d9a0baf8ffe194b8d0f82c6872745c39781b3",
-      "size": 15267
+      "sha256": "f20009c5cee208a89d9bf89ef440c14362e30fcb82861130965ce32229b952de",
+      "size": 16352
     },
     {
       "path": "harness/SOURCES.sha256",
-      "sha256": "77567d3dc70eba69b91bc975880a3c5600bac0baaf0efb2fb04a6ac49f7b0c34",
-      "size": 15267
+      "sha256": "ab85fa148b6606f44c8c6fea131e94eb13dd587bef19575225bc5ec6f93c3935",
+      "size": 16352
     },
     {
       "path": "harness/harness-src.tar.gz",
-      "sha256": "28109d6782c03e62fe045253a10a1a636393248422520af6585ee4eea4b51f79",
-      "size": 2094348
+      "sha256": "26746ee6c63e8a2458f6e299d3da02fca6508156d1187583b957521dfaff658b",
+      "size": 2263336
     },
     {
       "path": "harness/harness-src.tar.gz.sha256",
-      "sha256": "169f1c9e421c7b5390667543f9774bafe9d7ffc812065a7ac419679365a863d8",
+      "sha256": "0fce5df6fb63ae4d80a81e6eaeaf82321a145be4dd1d1de1e1306fb852093f40",
       "size": 85
     },
     {
