@@ -606,18 +606,22 @@
     }
     for (var gy = Math.ceil(minY); gy <= maxY; gy++) {
       add('line', { x1: padL, y1: sy(gy), x2: W - padR, y2: sy(gy), class: 'grid' });
-      add('text', { x: padL - 8, y: sy(gy) + 4, class: 'axis', 'text-anchor': 'end' }).textContent = Math.pow(10, gy).toFixed(gy < 0 ? 1 : 0) + '\u00d7';
+      var mv = Math.pow(10, gy);
+      var label = mv >= 1 ? mv.toFixed(0) : mv.toFixed(-gy);
+      add('text', { x: padL - 8, y: sy(gy) + 4, class: 'axis', 'text-anchor': 'end' }).textContent = label + '\u00d7';
     }
     // The fitted line over the plotted TVL range.
     add('line', { x1: sx(minX), y1: sy(c.intercept + c.slope * minX), x2: sx(maxX), y2: sy(c.intercept + c.slope * maxX), class: 'fitline' });
     pts.forEach(function (p) {
       add('circle', { cx: sx(p.x), cy: sy(p.y), r: p.live ? 3 : 3.4, class: p.live ? 'dot live' : 'dot pre' });
     });
-    add('text', { x: padL + 4, y: padT + 12, class: 'legend' }).textContent = '\u25cf live token (market cap / TVL)';
-    add('text', { x: padL + 4, y: padT + 28, class: 'legend' }).textContent = '\u25cf pre-token row (multiple the model applies)';
-    add('text', { x: padL + 4, y: padT + 44, class: 'legend' }).textContent = '\u2014 fitted line 10^(' + c.intercept.toFixed(2) + ' + ' + c.slope.toFixed(2) + ' \u00d7 log10 TVL)';
     add('text', { x: W - padR, y: H - 6, class: 'axis', 'text-anchor': 'end' }).textContent = 'TVL (log scale) \u2192';
-    return el('div', { class: 'chart-wrap' }, svg);
+    var legend = el('div', { class: 'chart-legend' },
+      el('span', { class: 'lg' }, el('i', { class: 'sw live' }), 'live token (market cap / TVL)'),
+      el('span', { class: 'lg' }, el('i', { class: 'sw pre' }), 'pre-token row (multiple the model applies)'),
+      el('span', { class: 'lg' }, el('i', { class: 'sw line' }), 'fitted line 10^(' + c.intercept.toFixed(2) + ' + ' + c.slope.toFixed(2) + ' \u00d7 log10 TVL)')
+    );
+    return el('div', { class: 'chart-wrap' }, legend, svg);
   }
   function calibCard(k, big, sub) {
     return el('div', { class: 'calib-card' }, el('span', { class: 'calib-k', text: k }), el('b', { class: 'num', text: big }), el('span', { class: 'sub', text: sub }));
