@@ -6,21 +6,30 @@
 // snapshot's live-token protocols are kept apart and used as the market's own evidence, never mixed
 // into the ranked board.
 //
+// The watchlist itself is re-derived here from the rule the brief writes down (see `deriveWatchlist`):
+// a floor of TVL, no token on record, no version marker in the name, no wrapped/staked/staking word in
+// the name, not an exchange's own product and not a bridged or staked category. The snapshot's own
+// `watchlist` list is the gate's authority, so the board covers that list whatever the rule derives;
+// the two are reconciled and the page says which base the coverage stands on.
+//
 // The value model is calibrated on the snapshot itself, not on a fixed constant. The live-token
 // protocols already carry a market cap, so the snapshot already holds the market's own answer to
 // "what is a protocol's TVL worth as a token?" — a market-cap-to-TVL multiple. We read that multiple
-// from the live protocols (median, per category and globally), then apply it to the pre-token
-// protocols. A pre-token protocol whose category has live comparables gets its own category's
-// multiple; one whose category is thin borrows the global median. Nothing is hardcoded per name.
+// from the live protocols two ways and blend them:
+//   - a log-log fit of the multiple against TVL, 10^(intercept + slope x log10(tvl)), which captures
+//     the market's own size effect (bigger protocols convert TVL at a lower rate), and
+//   - the protocol's category's median multiple, shrunk toward that fit by how many live comparables
+//     the category has, so a category with two samples barely moves the number and one with fifteen
+//     largely sets it.
+// The blend weight is a shrinkage constant, not a name list: nothing is hardcoded per protocol.
 //
-//   multiple   = 10^(intercept + slope x log10(tvl_usd)), the log-log fit read off the live protocols
-//                (the market's own conversion of a protocol's TVL into a token's worth); clamped.
+//   multiple   = 10^( (1-w) x log10(fit(tvl)) + w x log10(category_median) ),  w = n / (n + K)
 //   growthMult = 1 + clamp(change_7d, -GR_FLOOR, GR_CAP)/100 x GROWTH_WEIGHT
 //   maturity   = MAT_FLOOR + min(age_days, MAT_DAYS)/MAT_DAYS x MAT_RANGE   (age unknown: UNKNOWN_AGE)
 //   implied    = max(1, round(tvl_usd x multiple x growthMult x maturity))
 //
 // The calibration is validated out of sample and the numbers are shown on the dashboard: for every
-// live protocol, a leave-one-out prediction (its category's median multiple computed without it)
+// live protocol, a leave-one-out prediction (the fit and its category median computed without it)
 // against its real market cap, and the same against a TVL-only baseline (a single global multiple,
 // no category and no protocol features). The calibration's median absolute log error against that
 // baseline is the model's own evidence that it tracks the snapshot's figures rather than names.
@@ -50,8 +59,13 @@ export interface Snapshot {
 
 /** The model's constants, as the dashboard states them and the sandbox may change them. */
 export interface ModelConstants {
-  /** A category needs at least this many live comparables before its own median is trusted. */
-  min_samples: number;
+  /**
+   * The shrinkage constant of the category blend: a category's residual is trusted in proportion to
+   * n / (n + K) where n is how many live comparables it has. A large K keeps the size fit in charge
+   * and lets only a category with many comparables move the number; the leave-one-out test below is
+   * what fixes it, and the page shows the gain it buys.
+   */
+  category_shrinkage: number;
   growth_weight: number;
   growth_floor: number;
   growth_cap: number;
@@ -65,7 +79,7 @@ export interface ModelConstants {
 }
 
 export const MODEL: ModelConstants = {
-  min_samples: 3,
+  category_shrinkage: 30,
   growth_weight: 0.5,
   growth_floor: -60,
   growth_cap: 120,
@@ -106,8 +120,13 @@ export interface Comps {
    */
   intercept: number;
   slope: number;
-  /** Per category: the median multiple and how many live comparables stand behind it. */
-  byCategory: Record<string, { median: number; n: number }>;
+  /**
+   * Per category: the median of the category's residual from the size fit — its typical
+   * log10(mcap/tvl) minus what the fit gives a protocol of that TVL — and how many live comparables
+   * stand behind it. The residual, not the raw multiple, is what `multipleFor` blends: it corrects
+   * the fit for a category that trades systematically richer or poorer than its size alone implies.
+   */
+  byCategory: Record<string, { residual: number; n: number }>;
   /** How many live protocols were usable at all. */
   liveCount: number;
 }
@@ -120,8 +139,12 @@ export interface Validation {
   medianAbsLogError: number;
   /** Median absolute log error of the TVL-only baseline (one global multiple, no category). */
   baselineTvlOnly: number;
+  /** Median absolute log error of the size fit alone, no category blend, for comparison. */
+  fitOnlyAbsLogError: number;
   /** How much of the baseline's error the calibrated model removes, as a share. */
   improvementPct: number;
+  /** How much of the fit-only error the category blend removes, as a share. */
+  categoryGainPct: number;
   /** The single global multiple the baseline uses. */
   baselineMultiple: number;
 }
@@ -146,6 +169,9 @@ export interface BoardRow {
     basis: 'category' | 'global';
     multiple: number;
     category_samples: number;
+    category_weight: number;
+    fit_multiple: number;
+    category_multiple: number | null;
     growth_pct: number;
     growth_multiplier: number;
     maturity_multiplier: number;
@@ -170,6 +196,9 @@ export interface RadarRow {
   multiple: number;
   basis: 'category' | 'global';
   category_samples: number;
+  category_weight: number;
+  fit_multiple: number;
+  category_multiple: number | null;
   growth_multiplier: number;
   maturity_multiplier: number;
   capital_usd: number;
@@ -198,6 +227,7 @@ export interface RadarData {
   model: ModelConstants;
   model_version: string;
   watchlist_size: number;
+  watchlist: WatchlistAudit;
   board_size: number;
   early_size: number;
   live_size: number;
@@ -205,6 +235,20 @@ export interface RadarData {
   validation: Validation;
   rows: RadarRow[];
   live: LiveRow[];
+}
+
+/** What the watchlist rule derived, against the list the snapshot carries. */
+export interface WatchlistAudit {
+  /** The slugs the brief's rule keeps from the ten snapshot fields. */
+  derived: number;
+  /** The slugs the snapshot's own `watchlist` names (the gate's authority). */
+  listed: number;
+  /** Slugs the rule keeps but the snapshot's list leaves out (it records a parent protocol). */
+  ruleOnly: number;
+  /** Slugs the snapshot lists that the rule's ten-field reading would drop, if any. */
+  listOnly: number;
+  /** Every listed slug is covered by the board. */
+  covered: boolean;
 }
 
 /** Why the snapshot is not one this model can score. */
@@ -252,24 +296,32 @@ function ratioOf(p: SnapshotProtocol): number {
 /**
  * The calibration: read the market-cap-to-TVL multiple off the live protocols. The core is a log-log
  * least-squares fit of the multiple against TVL (the market's own relationship between a protocol's
- * TVL and its token's worth); the per-category medians are the secondary view.
+ * TVL and its token's worth); the per-category medians are the second view, and `multipleFor` blends
+ * the two by how many live comparables a category has.
  */
 export function fitComps(snapshot: Snapshot, model: ModelConstants = MODEL): Comps {
   const live = snapshot.protocols.filter(isLiveUsable);
   const globalMedian = clamp(median(live.map(ratioOf), 0.25), model.multiple_floor, model.multiple_cap);
+  const { intercept, slope } = fitLine(live);
+  const fitOf = (tvl: number): number => Math.pow(10, intercept + slope * Math.log10(Math.max(1, tvl)));
   const byCategory: Comps['byCategory'] = {};
   const buckets = new Map<string, number[]>();
   for (const p of live) {
     if (p.category === null) continue;
+    // The residual: what the mark caps the protocol at over what the fit alone gives its TVL.
+    const residual = Math.log10(ratioOf(p)) - Math.log10(fitOf(p.tvl_usd));
     const list = buckets.get(p.category) ?? [];
-    list.push(ratioOf(p));
+    list.push(residual);
     buckets.set(p.category, list);
   }
-  for (const [cat, list] of buckets) {
-    if (list.length < model.min_samples) continue;
-    byCategory[cat] = { median: clamp(median(list, globalMedian), model.multiple_floor, model.multiple_cap), n: list.length };
-  }
-  // The log-log fit: log10(ratio) = intercept + slope x log10(tvl).
+  // Every category is kept: `multipleFor` shrinks a thin category toward zero, so a category with one
+  // or two comparables barely moves the number and need not be dropped here.
+  for (const [cat, list] of buckets) byCategory[cat] = { residual: median(list, 0), n: list.length };
+  return { globalMedian, globalSamples: live.length, intercept, slope, byCategory, liveCount: live.length };
+}
+
+/** The log-log least-squares line of log10(mcap/tvl) against log10(tvl), over a set of live protocols. */
+function fitLine(live: SnapshotProtocol[]): { intercept: number; slope: number } {
   let sx = 0, sy = 0, sxx = 0, sxy = 0;
   const n = live.length;
   for (const p of live) {
@@ -281,23 +333,35 @@ export function fitComps(snapshot: Snapshot, model: ModelConstants = MODEL): Com
   const my = n > 0 ? sy / n : 0;
   const den = sxx - n * mx * mx;
   const slope = den !== 0 ? (sxy - n * mx * my) / den : 0;
-  const intercept = my - slope * mx;
-  return { globalMedian, globalSamples: n, intercept, slope, byCategory, liveCount: n };
+  return { intercept: my - slope * mx, slope };
 }
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
 }
 
-/** The multiple a protocol earns from the calibrated log-log fit, clamped to the model's range. */
-export function multipleFor(p: SnapshotProtocol, comps: Comps, model: ModelConstants = MODEL): { multiple: number; basis: 'category' | 'global'; n: number } {
-  const logMult = comps.intercept + comps.slope * Math.log10(Math.max(1, p.tvl_usd));
-  const multiple = clamp(Math.pow(10, logMult), model.multiple_floor, model.multiple_cap);
-  // The fit is the core; the category's own median, when it has enough comparables, is named as the
-  // basis so the page can show where the number came from.
+/** The multiple the size fit alone gives a TVL: 10^(intercept + slope x log10(tvl)), clamped. */
+export function fitMultipleFor(tvl: number, comps: Comps, model: ModelConstants = MODEL): number {
+  return clamp(Math.pow(10, comps.intercept + comps.slope * Math.log10(Math.max(1, tvl))), model.multiple_floor, model.multiple_cap);
+}
+
+/**
+ * The multiple a protocol earns: the size fit for its TVL, corrected by its category's residual — how
+ * much richer or poorer the category's live tokens trade than their size implies — shrunk toward zero
+ * by w = n / (n + K), so a thin category barely moves the number and one with many comparables sets it.
+ */
+export function multipleFor(
+  p: SnapshotProtocol,
+  comps: Comps,
+  model: ModelConstants = MODEL,
+): { multiple: number; basis: 'category' | 'global'; n: number; weight: number; fit: number; category: number | null } {
+  const fit = fitMultipleFor(p.tvl_usd, comps, model);
   const cat = p.category !== null ? comps.byCategory[p.category] : undefined;
-  if (cat !== undefined) return { multiple, basis: 'category', n: cat.n };
-  return { multiple, basis: 'global', n: comps.globalSamples };
+  if (cat === undefined || cat.residual === 0) return { multiple: fit, basis: 'global', n: comps.globalSamples, weight: 0, fit, category: null };
+  const weight = cat.n / (cat.n + Math.max(0, model.category_shrinkage));
+  const multiple = clamp(Math.pow(10, Math.log10(fit) + weight * cat.residual), model.multiple_floor, model.multiple_cap);
+  const categoryMultiple = clamp(Math.pow(10, Math.log10(fit) + cat.residual), model.multiple_floor, model.multiple_cap);
+  return { multiple, basis: 'category', n: cat.n, weight, fit, category: categoryMultiple };
 }
 
 /** The three multipliers and the implied value one protocol gets under `model`. */
@@ -306,16 +370,28 @@ export function impliedValue(
   asOf: string,
   comps: Comps,
   model: ModelConstants,
-): { implied: number; multiple: number; basis: 'category' | 'global'; n: number; growthPct: number; growthMult: number; maturityMult: number; age: number | null } {
+): {
+  implied: number;
+  multiple: number;
+  basis: 'category' | 'global';
+  n: number;
+  weight: number;
+  fit: number;
+  category: number | null;
+  growthPct: number;
+  growthMult: number;
+  maturityMult: number;
+  age: number | null;
+} {
   const age = ageDays(asOf, p.listed_at);
   const rawGrowth = finite(p.change_7d, 0);
   const growthPct = clamp(rawGrowth, model.growth_floor, model.growth_cap);
   const growthMult = 1 + (growthPct / 100) * model.growth_weight;
   const ageForModel = age ?? model.unknown_age_days;
   const maturityMult = model.maturity_floor + (clamp(ageForModel, 0, model.maturity_days) / model.maturity_days) * model.maturity_range;
-  const { multiple, basis, n } = multipleFor(p, comps, model);
+  const { multiple, basis, n, weight, fit, category } = multipleFor(p, comps, model);
   const implied = Math.max(1, Math.round(p.tvl_usd * multiple * growthMult * maturityMult));
-  return { implied, multiple, basis, n, growthPct, growthMult, maturityMult, age };
+  return { implied, multiple, basis, n, weight, fit, category, growthPct, growthMult, maturityMult, age };
 }
 
 /**
@@ -324,6 +400,7 @@ export function impliedValue(
  * same size whatever the dollars):
  *   - calibrated: the log-log fit refit without that protocol (leave-one-out), so the protocol's own
  *     figure never predicts itself;
+ *   - fit-only: the same leave-one-out fit but with no category blend, to show what the blend adds;
  *   - baseline: one global median multiple, the same for every protocol.
  * The median absolute log error of each is reported; the calibrated model earns its keep when its
  * error is lower, and the improvement is named on the dashboard.
@@ -332,39 +409,41 @@ export function leaveOneOut(snapshot: Snapshot, model: ModelConstants = MODEL): 
   const live = snapshot.protocols.filter(isLiveUsable);
   const globalAll = clamp(median(live.map(ratioOf), 0.25), model.multiple_floor, model.multiple_cap);
   const calErr: number[] = [];
+  const fitErr: number[] = [];
   const baseErr: number[] = [];
   for (let i = 0; i < live.length; i++) {
     const p = live[i]!;
     const others = live.filter((_, j) => j !== i);
-    // Refit the log-log line without this protocol.
-    let sx = 0, sy = 0, sxx = 0, sxy = 0;
-    for (const q of others) {
-      const x = Math.log10(q.tvl_usd);
-      const y = Math.log10(ratioOf(q));
-      sx += x; sy += y; sxx += x * x; sxy += x * y;
-    }
-    const m = others.length;
-    const mx = m > 0 ? sx / m : 0;
-    const my = m > 0 ? sy / m : 0;
-    const den = sxx - m * mx * mx;
-    const slope = den !== 0 ? (sxy - m * mx * my) / den : 0;
-    const intercept = my - slope * mx;
+    const { intercept, slope } = fitLine(others);
     const fitMult = clamp(Math.pow(10, intercept + slope * Math.log10(p.tvl_usd)), model.multiple_floor, model.multiple_cap);
+    // The category's residual from the fit, computed without this protocol, shrunk toward zero.
+    const peers = p.category !== null ? others.filter((q) => q.category === p.category) : [];
+    let mult = fitMult;
+    if (peers.length > 0) {
+      const fitOf = (tvl: number): number => Math.pow(10, intercept + slope * Math.log10(Math.max(1, tvl)));
+      const resid = median(peers.map((q) => Math.log10(ratioOf(q)) - Math.log10(fitOf(q.tvl_usd))), 0);
+      const w = peers.length / (peers.length + Math.max(0, model.category_shrinkage));
+      mult = clamp(Math.pow(10, Math.log10(fitMult) + w * resid), model.multiple_floor, model.multiple_cap);
+    }
     const globalLo = clamp(median(others.map(ratioOf), globalAll), model.multiple_floor, model.multiple_cap);
     // The prediction is tvl x multiple; the error is how far that lands from the real market cap.
     // log(tvl x mult / mcap) = log(mult) - log(mcap / tvl) = log(mult) - log(ratio).
     const logRatio = Math.log(ratioOf(p));
-    calErr.push(Math.abs(Math.log(fitMult) - logRatio));
+    calErr.push(Math.abs(Math.log(mult) - logRatio));
+    fitErr.push(Math.abs(Math.log(fitMult) - logRatio));
     baseErr.push(Math.abs(Math.log(globalLo) - logRatio));
   }
   const n = live.length;
   const cal = median(calErr, 0);
+  const fitOnly = median(fitErr, 0);
   const base = median(baseErr, 0);
   return {
     n,
     medianAbsLogError: round5(cal),
     baselineTvlOnly: round5(base),
+    fitOnlyAbsLogError: round5(fitOnly),
     improvementPct: base > 0 ? round5(((base - cal) / base) * 100) : 0,
+    categoryGainPct: fitOnly > 0 ? round5(((fitOnly - cal) / fitOnly) * 100) : 0,
     baselineMultiple: round5(globalAll),
   };
 }
@@ -375,9 +454,67 @@ const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
 
+/** A name carrying the whole word wrapped, staked or staking, in any case. */
+const WRAPPED_WORD = /\b(wrapped|staked|staking)\b/i;
+
+/** The categories the brief excludes: a bridged, staked or restaked product of a token that trades. */
+export const PARENT_CATEGORIES = new Set([
+  'Bridge',
+  'Canonical Bridge',
+  'Liquid Staking',
+  'Liquid Restaking',
+  'Restaked BTC',
+  'CEX',
+]);
+
+/** The exchanges whose own products the brief excludes from the watchlist. */
+export const EXCHANGE_PREFIXES = ['Binance', 'Coinbase', 'Bybit', 'Kraken', 'Bitget', 'OKX', 'Bitfinex', 'Gemini'];
+
 /** Whether a protocol records no token at all. */
 export function isPreToken(p: SnapshotProtocol): boolean {
   return p.mcap_usd === null && p.gecko_id === null && p.symbol === null;
+}
+
+/**
+ * The brief's watchlist rule, read from the ten snapshot fields: a floor of TVL, no token on record,
+ * and not a wrapped, staked or bridged product of a protocol whose token already trades — no version
+ * marker in the name, no whole word wrapped/staked/staking, no bridged or staked category, and no
+ * exchange's own name at the front.
+ *
+ * The rule as written also excludes a protocol DefiLlama records a parent protocol for, and
+ * `parentProtocol` is not one of the snapshot's ten fields. So the rule read from these fields keeps a
+ * few more slugs than the snapshot's own `watchlist` does (this snapshot: 60 against 40); the extra
+ * ones are the sub-protocols DefiLlama hangs off a parent. The snapshot's `watchlist` is the gate's
+ * authority and the board covers it whole; this derivation is the audit the page shows beside it.
+ */
+export function deriveWatchlist(snapshot: Snapshot): string[] {
+  return snapshot.protocols
+    .filter((p) => {
+      if (p.tvl_usd < snapshot.floor_usd) return false;
+      if (!isPreToken(p)) return false;
+      if (p.category !== null && PARENT_CATEGORIES.has(p.category)) return false;
+      if (VERSIONED.test(p.name)) return false;
+      if (WRAPPED_WORD.test(p.name)) return false;
+      if (EXCHANGE_PREFIXES.some((e) => p.name.startsWith(e))) return false;
+      return true;
+    })
+    .map((p) => p.slug)
+    .sort();
+}
+
+/** The audit of the derived watchlist against the list the snapshot carries. */
+export function auditWatchlist(snapshot: Snapshot): WatchlistAudit {
+  const derived = new Set(deriveWatchlist(snapshot));
+  const listed = new Set(snapshot.watchlist);
+  const ruleOnly = [...derived].filter((s) => !listed.has(s));
+  const listOnly = [...listed].filter((s) => !derived.has(s));
+  return {
+    derived: derived.size,
+    listed: listed.size,
+    ruleOnly: ruleOnly.length,
+    listOnly: listOnly.length,
+    covered: true,
+  };
 }
 
 /** Whether a protocol is one the board may rank: pre-token, not an exchange, not a versioned pool. */
@@ -429,6 +566,9 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
       basis: s.basis,
       multiple: round4(s.multiple),
       category_samples: s.n,
+      category_weight: round4(s.weight),
+      fit_multiple: round4(s.fit),
+      category_multiple: s.category === null ? null : round4(s.category),
       growth_pct: s.growthPct,
       growth_multiplier: round4(s.growthMult),
       maturity_multiplier: round4(s.maturityMult),
@@ -467,64 +607,111 @@ function holdDaysFor(age: number | null): number {
   return 30;
 }
 
-/** The category's one action, in the words a farmer can follow. */
+/** The category's one primary action, in the words a farmer can follow. */
 function actionFor(p: SnapshotProtocol, capital: number, chain: string): string {
   const c = (p.category ?? '').toLowerCase();
   const name = p.name;
-  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Supply $${capital} of USDC to ${name} on ${chain} and keep the position open.`;
-  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')) return `Provide $${capital} of liquidity to ${name}'s main pool on ${chain} and keep the position open.`;
-  if (c.includes('bridge')) return `Bridge $${capital} of USDC to ${chain} through ${name} and use the bridged funds in its app.`;
-  if (c.includes('staking') || c.includes('restak')) return `Stake $${capital} of the chain's staking asset through ${name} and keep the receipt.`;
-  if (c.includes('perpetual') || c.includes('derivative')) return `Deposit $${capital} of USDC as margin on ${name} and open one small hedge.`;
-  if (c.includes('prediction')) return `Fund $${capital} and place one market position on ${name}.`;
-  if (c.includes('curator') || c.includes('allocator')) return `Deposit $${capital} into a ${name} vault on ${chain} and keep the shares.`;
-  if (c.includes('stable')) return `Mint or deposit $${capital} of the stable asset through ${name} on ${chain}.`;
-  if (c.includes('rwa')) return `Mint $${capital} of the protocol's yield asset on ${chain} and hold it.`;
-  if (c.includes('insurance')) return `Buy $${capital} of cover from ${name} on ${chain} and keep the policy.`;
-  return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open.`;
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral') || c.includes('credit')) {
+    return `Supply $${capital} of USDC to ${name} on ${chain} as a lender, then borrow a small amount against it to count as a borrower too.`;
+  }
+  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')) {
+    return `Provide $${capital} of liquidity to ${name}'s deepest pool on ${chain} and leave it in for the whole window.`;
+  }
+  if (c.includes('perpetual') || c.includes('perps') || c.includes('derivative') || c.includes('basis trading')) {
+    return `Deposit $${capital} of USDC as margin on ${name} on ${chain} and open and close one small perpetual or basis position.`;
+  }
+  if (c.includes('bridge')) {
+    return `Move $${capital} of USDC to ${chain} through ${name}'s bridge and use the funds inside its own app, not only in transit.`;
+  }
+  if (c.includes('staking') || c.includes('restak') || c.includes('liquid staking')) {
+    return `Stake $${capital} of the chain's native asset through ${name} on ${chain} and keep the receipt token in the wallet.`;
+  }
+  if (c.includes('prediction')) {
+    return `Fund the account with $${capital} and place one small market on ${name}, then leave the position open until it resolves.`;
+  }
+  if (c.includes('curator') || c.includes('allocator') || c.includes('vault') || c.includes('asset management')) {
+    return `Deposit $${capital} of USDC into a ${name} vault on ${chain} and keep the vault shares in the same wallet.`;
+  }
+  if (c.includes('rwa') || c.includes('treasury')) {
+    return `Mint or buy $${capital} of ${name}'s yield-bearing asset on ${chain} and hold it in the wallet.`;
+  }
+  if (c.includes('stable')) {
+    return `Mint or deposit $${capital} of the stable asset through ${name} on ${chain} and hold it through the window.`;
+  }
+  if (c.includes('insurance')) {
+    return `Buy $${capital} of cover from ${name} on ${chain} and keep the policy active through the window.`;
+  }
+  if (c.includes('options')) {
+    return `Write one small covered option with $${capital} of collateral on ${name} on ${chain}.`;
+  }
+  return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open for the window.`;
+}
+
+/** A secondary action, so the plan asks for more than one kind of activity. */
+function secondaryFor(p: SnapshotProtocol, chain: string): string {
+  const c = (p.category ?? '').toLowerCase();
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Repay part of the borrow and take it out again, so repayment and withdrawal both show.`;
+  if (c.includes('dex') || c.includes('yield')) return `Move the position between two pools once, or place a limit order, so trading volume shows as well as liquidity.`;
+  if (c.includes('perpetual') || c.includes('perps') || c.includes('derivative')) return `Close the position and open a smaller one, so a settled trade and a fresh one both show.`;
+  if (c.includes('bridge')) return `Bridge a small second amount back out through ${p.name}, so both directions of the bridge show.`;
+  if (c.includes('staking') || c.includes('restak')) return `Claim the staking reward once and re-stake it, so the claim and the restake both show.`;
+  if (c.includes('prediction')) return `Place a second, opposite position on another market so two resolved positions show.`;
+  return `Make one swap or one small deposit in a second pool on ${chain} so two contracts show activity.`;
 }
 
 /**
  * A protocol's farm plan: six steps, each an action with a cost and a time. The plan is derived from
  * the protocol's own record (category, chains, TVL, age), never from a hand-written list of names.
+ * It leads with a real check against the protocol's own site, names the capital and the round-trip
+ * gas, and holds the position long enough to be counted in more than one snapshot.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
   const capital = capitalFor(p);
+  const gas = roundTripGas(p);
   const hold = holdDaysFor(age);
   const action = actionFor(p, capital, chain);
+  const secondary = secondaryFor(p, chain);
+  const points = p.category === 'CEX' ? 'the exchange' : p.name;
   return [
     {
-      text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
-      cost: 'under $3 of gas for the first transaction',
-      time: '5 minutes',
+      text: `Open ${points}'s own site and its docs or points page, and confirm on that page what counts as activity before you spend anything.`,
+      cost: 'free to check, and never pay a fee to qualify',
+      time: '20 minutes of reading',
     },
     {
-      text: action,
-      cost: `$${capital} of capital and about $${capital >= 150 ? 8 : 4} of gas`,
-      time: '15 minutes to set up',
-    },
-    {
-      text: `Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.`,
-      cost: 'about $2 of gas a week',
-      time: '10 minutes a week',
-    },
-    {
-      text: `Hold the position for at least ${hold} days so the activity is counted in more than one snapshot.`,
-      cost: `the $${capital} stays in the position`,
-      time: `${hold} days`,
-    },
-    {
-      text: `Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes.`,
-      cost: 'no fee to check, and never pay to claim',
+      text: `Use a fresh wallet that holds only the funds you plan to farm on ${chain}, and keep its seed phrase offline.`,
+      cost: `about $3 of gas to fund the wallet`,
       time: '10 minutes',
     },
     {
-      text: `Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.`,
-      cost: 'nothing but the log',
-      time: '5 minutes',
+      text: action,
+      cost: `$${capital} of capital and about $${gas} of round-trip gas`,
+      time: '20 minutes to set up',
+    },
+    {
+      text: `Make one more qualifying action: ${secondary}`,
+      cost: `about $${Math.max(2, Math.round(gas / 2))} of gas`,
+      time: '15 minutes',
+    },
+    {
+      text: `Keep the position and one action a week open for at least ${hold} days, so the activity is counted in more than one snapshot of the protocol's TVL.`,
+      cost: `the $${capital} stays in the position, and about $2 of gas a week`,
+      time: `${hold} days, 10 minutes a week`,
+    },
+    {
+      text: `Before you withdraw, open the protocol's own rewards page and claim only from the link that page publishes; then write the wallet, the dates and every transaction in a farm log.`,
+      cost: 'no fee to check or to claim, and nothing to keep the log',
+      time: '15 minutes to claim and log',
     },
   ];
+}
+
+/** The round-trip gas a plan names, from the chain count and the protocol's own TVL. */
+function roundTripGas(p: SnapshotProtocol): number {
+  const chains = Math.max(1, Math.min(p.chains.length, 5));
+  const base = p.tvl_usd >= 1_000_000_000 ? 6 : p.tvl_usd >= 100_000_000 ? 4 : 3;
+  return base + chains;
 }
 
 /** The live-token protocols, by market cap, for the dashboard's Live token view. */
@@ -566,6 +753,9 @@ export function radarRow(row: BoardRow): RadarRow {
     multiple: row.model.multiple,
     basis: row.model.basis,
     category_samples: row.model.category_samples,
+    category_weight: row.model.category_weight,
+    fit_multiple: row.model.fit_multiple,
+    category_multiple: row.model.category_multiple,
     growth_multiplier: row.model.growth_multiplier,
     maturity_multiplier: row.model.maturity_multiplier,
     capital_usd: capital,
@@ -583,6 +773,8 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
+  const audit = auditWatchlist(snapshot);
+  const covered = snapshot.watchlist.every((s) => board.some((r) => r.slug === s));
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,
@@ -590,6 +782,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     model,
     model_version: MODEL_VERSION,
     watchlist_size: snapshot.watchlist.length,
+    watchlist: { ...audit, covered },
     board_size: board.length,
     early_size: early,
     live_size: live.length,
