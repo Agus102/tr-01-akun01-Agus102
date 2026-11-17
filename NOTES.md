@@ -27,7 +27,7 @@ snapshot carries, so the ten-field reading keeps 20 extra sub-protocols (Arcus P
 USDCx, …). The snapshot's own list is the gate's authority and the board covers it whole; the page
 shows both figures and says which is which.
 
-## The value model (`lib/model.ts`, `MODEL_VERSION = 'radar-3-category-fit'`)
+## The value model (`lib/model.ts`, `MODEL_VERSION = 'radar-4-factored'`)
 
 Read off the snapshot's own live-token protocols, never a fixed constant:
 
@@ -36,10 +36,12 @@ Read off the snapshot's own live-token protocols, never a fixed constant:
   convert TVL to token value at a lower rate.
 - Each category carries the median of its live tokens' **residual** from that fit; the multiple is
   `fit(tvl) · (category_multiple / fit(tvl))^w` with `w = n / (n + 30)`. The heavy shrinkage keeps the
-  size fit in charge and lets only a well-sampled category move the number.
+  size fit in charge and lets only a well-sampled category move the number. Each row also carries the
+  `confidence` of its multiple (`w`, the share the category was trusted).
 - `growthMult = 1 + clamp(change_7d, −60, 120)/100 · 0.5`
 - `maturityMult = 0.6 + min(age_days, 1095)/1095 · 0.4` (age from `listed_at`; unknown → 365 days)
-- `implied = max(1, round(tvl_usd · multiple · growthMult · maturityMult))`, computed from the rounded
+- `base = tvl_usd · multiple` (the row's own `base_value_usd`), and
+  `implied = max(1, round(tvl_usd · multiple · growthMult · maturityMult))`, computed from the rounded
   factors so the page recomputes the row's own number exactly (verified for all 198 rows).
 
 `leaveOneOut` is the out-of-sample evidence: for each live protocol it refits the line without that
@@ -47,7 +49,8 @@ protocol and compares three predictions to the real market cap in natural-log er
 
 On this snapshot: calibrated **1.19006**, size-fit-only **1.22340**, single-multiple baseline
 **1.62326**. So the size fit cuts the baseline's typical miss by **26.7%**, and the category residual
-adds a further **2.7%** over the fit alone. The page states all three.
+adds a further **2.7%** over the fit alone. The page states all three, and draws the fit against every
+live token and every pre-token row as a scatter.
 
 ## The board
 
@@ -60,16 +63,34 @@ cost and a time, derived from the protocol's category, chains, TVL and age.
 
 ## The dashboard (`dashboard/`)
 
-`index.html` + `app.css` + `app.js`, no framework, no network. Four views (Watchlist floor, Early
-radar, All pre-token, Live tokens), a search box, category and chain filters and a minimum-implied-value
-filter, every column sortable, and a detail drawer that shows the full derivation of one row and its
-farm plan. The page recomputes each row from the snapshot figures and checks it against the board.
+`index.html` + `app.css` + `app.js`, no framework, no network. The page opens on a radar scope that
+plots every ranked protocol as a blip (radius = log TVL, angle = rank), then the ranked board, then a
+worked example of the pricing on the top row, then the value model drawn as a scatter (live tokens vs
+the fitted line, pre-token rows as marks), its calibration cards and the watchlist audit.
+
+Four views (Watchlist floor, Early radar, All pre-token, Live tokens), a search box, category and chain
+filters and a minimum-implied-value filter, every column sortable, and a detail drawer that shows the
+full derivation of one row (TVL, growth, age, size fit, category multiple and weight, base value, the
+two multipliers, implied value) and its farm plan. The page recomputes each row from the snapshot
+figures and checks it against the board.
+
+The farm plan is the same derivation `lib/model.ts` writes to `board.json`, mirrored in the page so the
+two agree: it leads with the protocol's own record (TVL, seven-day growth, age with no token), then a
+fresh wallet, the category's primary action at a stated capital and round-trip gas, a second kind of
+activity, the hold, and the claim-and-log step.
+
+## Screenshots
+
+`tools/shoot.mjs` serves `out/` locally and drives Chromium. The page is rendered 1060 CSS px wide at
+1.3585 device pixels each, so every image is **1440 px** on its long side (the gate's cap); each shot
+picks the window height and scroll that fill the frame and land in the dossier's **300–350 KiB** band:
+board 332 KiB (1440×1440), detail 318 KiB (1440×1060), filtered 328 KiB (1440×1440).
 
 ## Run result
 
 ```
 token radar: 758 protocols, 40 on the watchlist (the rule derives 60), 198 rows scored (158 early, 40 live set aside)
-token radar: model radar-3-category-fit: multiple read off 128 live tokens, out-of-sample error 1.19006 vs fit-only 1.2234 and baseline 1.62326
+token radar: model radar-4-factored: multiple read off 128 live tokens, out-of-sample error 1.19006 vs fit-only 1.2234 and baseline 1.62326
 token radar: wrote out/board.json, out/data.js, out/dashboard (3 files), out/screenshots (3 images) and out/dossier.json
 ```
 
