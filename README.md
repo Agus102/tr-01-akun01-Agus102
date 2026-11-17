@@ -1,14 +1,17 @@
-# token-radar-01 — Token Launch Radar
+# Token Radar — token-radar-01
 
-A ranked radar of pre-token protocols: it reads the sealed DefiLlama snapshot, scores every
-protocol with a model calibrated on the snapshot itself (the multiple that turns TVL into an
-implied token value is read off the live-token protocols in the same file, not hard-coded),
-and writes the board, a static dashboard and the judge dossier.
+A token launch radar: reads the frozen DefiLlama snapshot and builds the watchlist of protocols
+with TVL at or above the floor, no token, no version marker, and not a wrapped/staked/bridged
+product — then presents them in a sortable, filterable board with a detail view and farm plans.
 
-## Run it
+[![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![rank](https://make.fun/badge/token-radar-01/Agus102/tr-01-akun01-agus102/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![reward](https://make.fun/badge/token-radar-01/Agus102/tr-01-akun01-agus102/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 
-```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../token-radar-01-kit/input/snapshot.json
-```
+## Run
 
-Under the grader, `/input/snapshot.json` and `/output` are the paths.
+    node ../token-radar-01-kit/cli/makefun.mjs check --kit ../token-radar-01-kit --repo .
+
+Entry point: `main.ts`. Data: the frozen snapshot only.
+
+Built for [make.fun](https://make.fun)'s bounty: Build the best token launch radar.
