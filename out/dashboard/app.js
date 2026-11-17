@@ -495,7 +495,7 @@
         eqRow('Maturity multiplier', String(row.maturity_multiplier)),
         eqRow('Implied value', fmtFull(row.implied_value_usd), 'strong')
       ),
-      el('p', { class: 'sub' }, 'Model ' + DATA.model_version + ': the page recomputes this row as ' + fmtFull(recomputed) + (matches ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price, and the protocol may never issue a token.')
+      el('p', { class: 'sub' }, 'The maturity term rewards a protocol that has held its TVL for a long time: a launch on a record that has already survived years is more credible than one on a protocol a few months old. Model ' + DATA.model_version + ': the page recomputes this row as ' + fmtFull(recomputed) + (matches ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price, and the protocol may never issue a token.')
     ));
 
     dialog.appendChild(el('section', { class: 'detail-section' },
