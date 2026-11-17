@@ -91,19 +91,22 @@ export function buildReport(
   validation: Validation,
   asOf: string,
   watchlistSize: number,
+  derivedWatchlist: number,
   topN = 25,
 ): string {
   const lines: string[] = [];
   lines.push('# Token Radar — pre-token protocols ranked by implied value');
   lines.push('');
-  lines.push(`Snapshot as of ${asOf}. The watchlist holds ${watchlistSize} protocols: at least $50M of TVL, no token on record. The board ranks ${rows.length} pre-token protocols by what their launch would be worth.`);
+  lines.push(`Snapshot as of ${asOf}. The snapshot names ${watchlistSize} watchlist protocols: at least $50M of TVL, no token on record, and not a wrapped, staked or bridged product of a token that already trades. The brief's rule, read from the ten fields this snapshot carries, keeps ${derivedWatchlist}; the extra ones are sub-protocols DefiLlama hangs off a parent, a field the ten omit. The snapshot's own list is the floor and the board covers it whole. The board ranks ${rows.length} pre-token protocols by what their launch would be worth.`);
   lines.push('');
   lines.push('## The value model');
   lines.push('');
-  lines.push(`The multiple that turns a protocol's TVL into an implied token value is read from the ${comps.liveCount} protocols in this same snapshot that already trade a token: a log-log fit of market-cap-to-TVL against TVL. It is not a fixed constant and no protocol name is special-cased.`);
+  lines.push(`The multiple that turns a protocol's TVL into an implied token value is read from the ${comps.liveCount} protocols in this same snapshot that already trade a token. The core is a log-log fit of market-cap-to-TVL against TVL — the market's own size effect — corrected by each category's typical residual from that fit, shrunk toward zero by how few live comparables the category has. It is not a fixed constant and no protocol name is special-cased.`);
   lines.push('');
-  lines.push(`- multiple = 10^(${comps.intercept.toFixed(4)} + ${comps.slope.toFixed(4)} * log10(tvl_usd))`);
+  lines.push(`- fit(TVL) = 10^(${comps.intercept.toFixed(4)} + ${comps.slope.toFixed(4)} * log10(tvl_usd))`);
+  lines.push(`- multiple = fit(TVL) * (category multiple / fit(TVL))^w,  w = n / (n + 30)`);
   lines.push(`- out-of-sample error (leave-one-out over ${validation.n} live protocols): ${validation.medianAbsLogError} median absolute log error`);
+  lines.push(`- against the size fit alone (${validation.fitOnlyAbsLogError}): the category correction moves it by ${validation.categoryGainPct}%`);
   lines.push(`- against a single fixed multiple (${validation.baselineMultiple}x): ${validation.baselineTvlOnly}, so the calibration cuts the typical miss by ${validation.improvementPct}%`);
   lines.push('');
   lines.push('A prediction is a model, not a price. The out-of-sample error above is the honest size of the miss to expect.');

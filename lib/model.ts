@@ -92,7 +92,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-2-calibrated';
+export const MODEL_VERSION = 'radar-3-category-fit';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
@@ -192,6 +192,8 @@ export interface RadarRow {
   mcap_usd: number | null;
   listed_at: string | null;
   age_days: number | null;
+  /** Whether the snapshot's own watchlist names this slug: the floor the board must cover. */
+  on_watchlist: boolean;
   implied_value_usd: number;
   multiple: number;
   basis: 'category' | 'global';
@@ -228,6 +230,7 @@ export interface RadarData {
   model_version: string;
   watchlist_size: number;
   watchlist: WatchlistAudit;
+  airdrop_share: number;
   board_size: number;
   early_size: number;
   live_size: number;
@@ -265,6 +268,11 @@ const DAY_MS = 86_400_000;
 function finite(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
+
+/** A number rounded to four decimals, the precision the board stores its factors at. */
+const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+/** A number rounded to five decimals, the precision the report states its evidence at. */
+const round5 = (n: number): number => Math.round(n * 1e5) / 1e5;
 
 /** The median of a list of numbers, or `fallback` when it is empty. */
 function median(xs: number[], fallback: number): number {
@@ -386,12 +394,16 @@ export function impliedValue(
   const age = ageDays(asOf, p.listed_at);
   const rawGrowth = finite(p.change_7d, 0);
   const growthPct = clamp(rawGrowth, model.growth_floor, model.growth_cap);
-  const growthMult = 1 + (growthPct / 100) * model.growth_weight;
   const ageForModel = age ?? model.unknown_age_days;
-  const maturityMult = model.maturity_floor + (clamp(ageForModel, 0, model.maturity_days) / model.maturity_days) * model.maturity_range;
-  const { multiple, basis, n, weight, fit, category } = multipleFor(p, comps, model);
+  const m = multipleFor(p, comps, model);
+  // The row stores the multiple and the multipliers rounded to four decimals; the implied value is
+  // computed from those stored figures, so the page recomputes the row's own number exactly rather
+  // than a near-miss the data cannot explain.
+  const multiple = round4(m.multiple);
+  const growthMult = round4(1 + (growthPct / 100) * model.growth_weight);
+  const maturityMult = round4(model.maturity_floor + (clamp(ageForModel, 0, model.maturity_days) / model.maturity_days) * model.maturity_range);
   const implied = Math.max(1, Math.round(p.tvl_usd * multiple * growthMult * maturityMult));
-  return { implied, multiple, basis, n, weight, fit, category, growthPct, growthMult, maturityMult, age };
+  return { implied, multiple, basis: m.basis, n: m.n, weight: m.weight, fit: m.fit, category: m.category, growthPct, growthMult, maturityMult, age };
 }
 
 /**
@@ -447,9 +459,6 @@ export function leaveOneOut(snapshot: Snapshot, model: ModelConstants = MODEL): 
     baselineMultiple: round5(globalAll),
   };
 }
-
-const round5 = (n: number): number => Math.round(n * 1e5) / 1e5;
-const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
@@ -733,7 +742,7 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
 }
 
 /** A board row's compact form for data.js, with the farm plan generated in the page. */
-export function radarRow(row: BoardRow): RadarRow {
+export function radarRow(row: BoardRow, onWatchlist: boolean): RadarRow {
   const hold = holdDaysFor(row.age_days);
   const capital = capitalFor(row as unknown as SnapshotProtocol);
   const hours = Math.round((0.5 + Math.max(1, Math.ceil(hold / 7)) * 0.2 + 0.3) * 10) / 10;
@@ -749,6 +758,7 @@ export function radarRow(row: BoardRow): RadarRow {
     mcap_usd: row.mcap_usd,
     listed_at: row.listed_at,
     age_days: row.age_days,
+    on_watchlist: onWatchlist,
     implied_value_usd: row.implied_value_usd,
     multiple: row.model.multiple,
     basis: row.model.basis,
@@ -783,12 +793,13 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     model_version: MODEL_VERSION,
     watchlist_size: snapshot.watchlist.length,
     watchlist: { ...audit, covered },
+    airdrop_share: AIRDROP_SHARE,
     board_size: board.length,
     early_size: early,
     live_size: live.length,
     comps: fitComps(snapshot, model),
     validation: leaveOneOut(snapshot, model),
-    rows: board.map(radarRow),
+    rows: board.map((r) => radarRow(r, snapshot.watchlist.includes(r.slug))),
     live,
   };
   return { board, radar };

@@ -57,7 +57,7 @@ writeFileSync(join(out, 'board.json'), `${JSON.stringify({ rows: board })}\n`);
 writeFileSync(join(out, 'data.js'), dataScript(radar));
 // A plain-text summary beside the page: the model, its out-of-sample evidence and the top rows with
 // their farm economics, so a reader who never opens the page still gets the radar's answer.
-writeFileSync(join(out, 'radar.md'), buildReport(board, radar.comps, radar.validation, snapshot.as_of, snapshot.watchlist.length));
+writeFileSync(join(out, 'radar.md'), buildReport(board, radar.comps, radar.validation, snapshot.as_of, snapshot.watchlist.length, radar.watchlist.derived));
 
 /** Copy one directory's regular files into `to`, skipping names that start with a dot. */
 function copyFiles(from: string, to: string): string[] {
@@ -91,7 +91,7 @@ for (const name of shots) {
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
 
 process.stdout.write(
-  `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
-    `token radar: model ${radar.model_version}: multiple read off ${radar.comps.globalSamples} live tokens, out-of-sample error ${radar.validation.medianAbsLogError} vs baseline ${radar.validation.baselineTvlOnly}\n` +
+  `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist (the rule derives ${radar.watchlist.derived}), ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
+    `token radar: model ${radar.model_version}: multiple read off ${radar.comps.globalSamples} live tokens, out-of-sample error ${radar.validation.medianAbsLogError} vs fit-only ${radar.validation.fitOnlyAbsLogError} and baseline ${radar.validation.baselineTvlOnly}\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (3 files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );

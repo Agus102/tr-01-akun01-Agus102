@@ -8,8 +8,11 @@ import { createRequire } from 'node:module';
 
 const repo = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '');
 const OUT = join(repo, 'out');
-const require = createRequire('/home/xinox/circle-faucet-bot/');
+// Playwright is a global install on this machine; load it by path so the tool runs from anywhere.
+const require = createRequire('/usr/lib/node_modules/');
 const { chromium } = require('playwright');
+
+const EXEC = process.env.CHROMIUM || join(process.env.HOME || '/root', '.cache/ms-playwright/chromium-1255/chrome-linux64/chrome');
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
 const PORT = 18471;
@@ -25,14 +28,14 @@ const server = createServer((req, res) => {
 
 await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 
-const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: EXEC, args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1360, height: 900 }, deviceScaleFactor: 1 });
 
 const URL_BASE = `http://127.0.0.1:${PORT}/dashboard/index.html`;
 
 async function fresh() {
   await page.goto(URL_BASE, { waitUntil: 'load' });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
 }
 
 async function snap(file) {
@@ -43,24 +46,19 @@ async function snap(file) {
 
 mkdirSync(join(repo, 'screenshots'), { recursive: true });
 
-// 1. The board, at the top.
+// 1. The board, at the top, on the watchlist floor view.
 await fresh();
 await snap('screenshots/1-board.png');
 
 // 2. A protocol's detail view: click the top row so the drawer opens.
-await page.evaluate(() => {
-  const row = document.querySelector('tbody tr');
-  if (row) row.click();
-});
-await page.waitForTimeout(700);
+await page.locator('tbody tr').first().click();
+await page.waitForTimeout(600);
 await snap('screenshots/2-detail.png');
 
-// 3. A filtered view: pick a category in the real control and type a search, as a reader would.
+// 3. A filtered view: pick a category and a chain in the real controls, as a reader does.
 await fresh();
 await page.selectOption('#category', 'Lending');
 await page.waitForTimeout(300);
-await page.fill('#q', 'credit');
-await page.waitForTimeout(500);
 await snap('screenshots/3-filtered.png');
 
 await browser.close();
