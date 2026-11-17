@@ -259,7 +259,7 @@
   // second reading of the board (blips cluster at the bottom-left, the small protocols).
   function heroScope() {
     var NS = 'http://www.w3.org/2000/svg';
-    var W = 1288, H = 236, cx = 168, cy = H / 2, R = H / 2 - 14;
+    var W = 1288, H = 164, cx = 110, cy = H / 2, R = H / 2 - 10;
     var svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     svg.setAttribute('role', 'img');
@@ -302,13 +302,13 @@
     // The masthead copy, drawn over the scope.
     var g = document.createElementNS(NS, 'g');
     g.setAttribute('class', 'hero-copy');
-    var t1 = add('text', { x: cx + R + 34, y: cy - 18, fill: '#eaf4ee', 'font-size': 25, 'font-weight': 600, 'font-family': 'Georgia, serif' });
+    var t1 = add('text', { x: cx + R + 30, y: cy - 18, fill: '#eaf4ee', 'font-size': 22, 'font-weight': 600, 'font-family': 'Georgia, serif' });
     t1.textContent = 'Every pre-token protocol, on one sweep';
-    var t2 = add('text', { x: cx + R + 34, y: cy + 12, fill: '#a9c9ba', 'font-size': 14, 'font-family': 'system-ui, sans-serif' });
+    var t2 = add('text', { x: cx + R + 30, y: cy + 8, fill: '#a9c9ba', 'font-size': 13.5, 'font-family': 'system-ui, sans-serif' });
     t2.textContent = DATA.rows.length + ' protocols ranked by implied value \u00b7 ' + DATA.watchlist.listed + ' on the watchlist floor \u00b7 ' + DATA.early_size + ' early finds the list left out';
-    var t3 = add('text', { x: cx + R + 34, y: cy + 40, fill: '#7fb39c', 'font-size': 12, 'font-family': 'ui-monospace, monospace' });
+    var t3 = add('text', { x: cx + R + 30, y: cy + 32, fill: '#7fb39c', 'font-size': 11.5, 'font-family': 'ui-monospace, monospace' });
     t3.textContent = '\u25cf watchlist floor   \u25cf early find   radius = log TVL, angle = rank';
-    add('line', { x1: cx + R + 34, y1: cy + 54, x2: W - 30, y2: cy + 54, stroke: 'url(#linegr)', 'stroke-width': 2, opacity: 0.7 });
+    add('line', { x1: cx + R + 30, y1: cy + 44, x2: W - 30, y2: cy + 44, stroke: 'url(#linegr)', 'stroke-width': 2, opacity: 0.7 });
     return el('div', { class: 'hero' }, svg);
   }
 
@@ -362,7 +362,8 @@
           el('b', { class: 'num ws-v', text: fmtUsd(r.implied_value_usd) }),
           el('span', { class: 'ws-sub', text: 'base ' + fmtUsd(r.base_value_usd) + ' \u2192 after growth and maturity' })
         )
-      )
+      ),
+      scatterChart()
     );
   }
 
@@ -407,16 +408,16 @@
       state.q = ''; state.category = 'all'; state.chain = 'all'; state.min = 0; state.view = 'watch'; writeHash(); render();
     } });
     return el('div', { class: 'controls' },
-      viewTabs(),
+      el('div', { class: 'controls-top' },
+        viewTabs(),
+        el('span', { class: 'count', html: '<b>' + shown + '</b> ' + (state.view === 'live' ? 'live-token protocols' : 'rows shown') })
+      ),
       el('div', { class: 'fields' },
         el('div', { class: 'field' }, el('label', { for: 'q', text: 'Search' }), search),
         el('div', { class: 'field' }, el('label', { for: 'category', text: 'Category' }), cat),
         el('div', { class: 'field' }, el('label', { for: 'chain', text: 'Chain' }), ch),
-        el('div', { class: 'field' }, el('label', { for: 'min', text: 'Implied value' }), min)
-      ),
-      el('div', { class: 'controls-foot' },
-        el('span', { class: 'count', text: shown + (state.view === 'live' ? ' live-token protocols' : ' rows shown') }),
-        clear
+        el('div', { class: 'field' }, el('label', { for: 'min', text: 'Implied value' }), min),
+        el('div', { class: 'field field-action' }, clear)
       )
     );
   }
@@ -552,7 +553,6 @@
         'multiple = fit(TVL) \u00d7 (category multiplier / fit)\u1d5c,  fit = 10^(' + c.intercept.toFixed(4) + ' + ' + c.slope.toFixed(4) + ' \u00d7 log10(tvl_usd)),  w = n / (n + ' + m.category_shrinkage + ')\n' +
         'implied = round( tvl_usd \u00d7 multiple \u00d7 (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ')/100 \u00d7 ' + m.growth_weight + ') \u00d7 (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ')/' + m.maturity_days + ' \u00d7 ' + m.maturity_range + ') )'
       ),
-      scatterChart(),
       el('div', { class: 'calib' },
         calibCard('Market multiple read off live tokens', c.globalSamples + ' protocols', 'median mcap/TVL ' + c.globalMedian.toFixed(3) + '\u00d7; the fit slopes ' + c.slope.toFixed(3) + ' per 10\u00d7 of TVL, so bigger protocols convert TVL to value at a lower rate'),
         calibCard('Out-of-sample error (leave-one-out)', v.medianAbsLogError.toFixed(3), 'median absolute log error over ' + v.n + ' live protocols: a typical prediction is within ' + Math.exp(v.medianAbsLogError).toFixed(2) + '\u00d7 of the real market cap'),
@@ -714,13 +714,13 @@
     shell.appendChild(header());
     shell.appendChild(heroScope());
     shell.appendChild(lede());
+    shell.appendChild(controls());
+    shell.appendChild(state.view === 'live' ? liveTable() : boardTable());
     if (state.view !== 'live') {
       var w = workedRow();
       if (w) shell.appendChild(w);
+      shell.appendChild(modelPanel());
     }
-    shell.appendChild(controls());
-    shell.appendChild(state.view === 'live' ? liveTable() : boardTable());
-    if (state.view !== 'live') shell.appendChild(modelPanel());
     app.appendChild(shell);
     app.setAttribute('aria-busy', 'false');
     if (!dialog.isConnected) app.appendChild(dialog);
